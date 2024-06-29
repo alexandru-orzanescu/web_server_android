@@ -1,0 +1,267 @@
+# Try to get the certificate from Let's Encrypt
+
+I have tried to run it.. didn't work for me cuz I didn't had a rooted android device
+
+## ChatGPT 
+
+To manually create an SSL certificate with Let's Encrypt on your Android device running Termux, you can use the HTTP-01 challenge method. This method requires you to place a verification file on your web server, which Let's Encrypt will check to confirm that you own the domain. Below is a detailed guide on how to achieve this using Certbot in Termux.
+
+### Steps to Manually Create an SSL Certificate with Let's Encrypt in Termux
+
+#### 1. **Prerequisites**
+
+- An Android device with Termux installed.
+- A registered domain name pointing to your Android device's public IP address.
+- Nginx installed and running on Termux (or another web server).
+- Port 80 (HTTP) must be open and accessible from the internet.
+
+#### 2. **Install Termux and Necessary Packages**
+
+1. **Open Termux and Update Packages:**
+
+   ```bash
+   pkg update && pkg upgrade -y
+   ```
+
+2. **Install Required Packages:**
+
+   ```bash
+   pkg install openssl curl tar git nano -y
+   ```
+
+#### 3. **Install Certbot**
+
+Certbot is a tool for obtaining SSL certificates from Let's Encrypt.
+
+1. **Download and Install Certbot:**
+
+   Certbot is not directly available in Termux, so we will use `acme.sh`, a lightweight client for Let's Encrypt, which is compatible and works well in Termux.
+
+   ```bash
+   curl https://get.acme.sh | sh
+   ```
+
+2. **Reload Shell:**
+
+   Apply changes by reloading your shell:
+
+   ```bash
+   source ~/.bashrc
+   ```
+
+3. **Verify Installation:**
+
+   Check that `acme.sh` is installed correctly:
+
+   ```bash
+   acme.sh --version
+   ```
+
+#### 4. **Prepare Your Web Server for the HTTP-01 Challenge**
+
+The HTTP-01 challenge requires a specific directory structure on your web server.
+
+1. **Create the Required Directory:**
+
+   Create a directory for the HTTP-01 challenge verification file:
+
+   ```bash
+   mkdir -p $PREFIX/share/nginx/html/.well-known/acme-challenge
+   ```
+
+2. **Edit Nginx Configuration:**
+
+   Ensure Nginx is configured to serve files from the `.well-known` directory:
+
+   ```bash
+   nano $PREFIX/etc/nginx/nginx.conf
+   ```
+
+   Add the following location block inside your server block:
+
+   ```nginx
+   server {
+       listen 80;
+       server_name yourdomain.com www.yourdomain.com;
+
+       location /.well-known/acme-challenge/ {
+           alias /data/data/com.termux/files/usr/share/nginx/html/.well-known/acme-challenge/;
+       }
+
+       location / {
+           root /data/data/com.termux/files/usr/share/nginx/html;
+           index index.html;
+       }
+   }
+   ```
+
+   Adjust the paths if necessary.
+
+3. **Restart Nginx:**
+
+   ```bash
+   nginx -s reload
+   ```
+
+4. **Verify Directory Access:**
+
+   Place a test file in the `.well-known/acme-challenge` directory:
+
+   ```bash
+   echo "test" > $PREFIX/share/nginx/html/.well-known/acme-challenge/testfile
+   ```
+
+   Verify you can access it via your browser:
+
+   ```
+   http://yourdomain.com/.well-known/acme-challenge/testfile
+   ```
+
+#### 5. **Generate the SSL Certificate**
+
+1. **Issue a Certificate:**
+
+   Use `acme.sh` to request an SSL certificate for your domain:
+
+   ```bash
+   acme.sh --issue -d yourdomain.com -d www.yourdomain.com -w /data/data/com.termux/files/usr/share/nginx/html
+   ```
+
+   Replace `yourdomain.com` with your domain and adjust the webroot path as necessary.
+
+2. **Verify Certificate Files:**
+
+   After the process completes, your certificates will be located in the `.acme.sh` directory in your home folder:
+
+   ```bash
+   ls ~/.acme.sh/yourdomain.com/
+   ```
+
+#### 6. **Install the SSL Certificate**
+
+1. **Create Directories for Certificates:**
+
+   Create a directory to store your SSL certificates:
+
+   ```bash
+   mkdir -p /data/data/com.termux/files/usr/etc/nginx/ssl
+   ```
+
+2. **Install the Certificate:**
+
+   Use `acme.sh` to install the certificate to the correct location:
+
+   ```bash
+   acme.sh --install-cert -d yourdomain.com \
+       --key-file       /data/data/com.termux/files/usr/etc/nginx/ssl/yourdomain.com.key \
+       --fullchain-file /data/data/com.termux/files/usr/etc/nginx/ssl/fullchain.cer \
+       --reloadcmd     "nginx -s reload"
+   ```
+
+   Adjust paths to match your directory structure.
+
+#### 7. **Configure Nginx for SSL**
+
+1. **Edit Nginx Configuration:**
+
+   Modify your Nginx configuration to enable SSL:
+
+   ```bash
+   nano $PREFIX/etc/nginx/nginx.conf
+   ```
+
+   Add the SSL configuration to your server block:
+
+   ```nginx
+   server {
+       listen 80;
+       server_name yourdomain.com www.yourdomain.com;
+
+       location /.well-known/acme-challenge/ {
+           alias /data/data/com.termux/files/usr/share/nginx/html/.well-known/acme-challenge/;
+       }
+
+       location / {
+           return 301 https://$host$request_uri;
+       }
+   }
+
+   server {
+       listen 443 ssl;
+       server_name yourdomain.com www.yourdomain.com;
+
+       ssl_certificate /data/data/com.termux/files/usr/etc/nginx/ssl/fullchain.cer;
+       ssl_certificate_key /data/data/com.termux/files/usr/etc/nginx/ssl/yourdomain.com.key;
+
+       location / {
+           root /data/data/com.termux/files/usr/share/nginx/html;
+           index index.html;
+       }
+   }
+   ```
+
+2. **Save and Exit:**
+
+   Save the changes and exit the text editor.
+
+3. **Restart Nginx:**
+
+   ```bash
+   nginx -s reload
+   ```
+
+#### 8. **Verify the SSL Certificate**
+
+1. **Check the SSL Certificate:**
+
+   Open a browser and navigate to `https://yourdomain.com`. You should see the secure padlock indicating that SSL is working.
+
+2. **Use SSL Checker:**
+
+   Use an SSL checker tool like [SSL Labs SSL Test](https://www.ssllabs.com/ssltest/) to verify that your SSL certificate is correctly installed and secure.
+
+### Additional Tips
+
+- **Renew Certificates Manually:**
+  You will need to renew your certificates every 90 days. To renew manually, run:
+
+  ```bash
+  acme.sh --renew -d yourdomain.com --force --reloadcmd "nginx -s reload"
+  ```
+
+- **Script the Renewal Process:**
+  You can create a simple script and add it to Termux’s cron to handle renewals:
+
+  ```bash
+  nano ~/renew_cert.sh
+  ```
+
+  Add the following content:
+
+  ```bash
+  #!/data/data/com.termux/files/usr/bin/bash
+  acme.sh --renew -d yourdomain.com --force --reloadcmd "nginx -s reload"
+  ```
+
+  Make the script executable:
+
+  ```bash
+  chmod +x ~/renew_cert.sh
+  ```
+
+  Add the script to cron:
+
+  ```bash
+  crontab -e
+  ```
+
+  Add a cron job to run the script monthly:
+
+  ```plaintext
+  0 0 1 * * /data/data/com.termux/files/home/renew_cert.sh
+  ```
+
+- **Ensure Port 80 and 443 Are Open:**
+  Verify that your router's port forwarding is correctly configured for ports 80 and 443.
+
+By following these steps, you can manually create and manage SSL certificates for your Android device using Termux and Let's Encrypt without relying on Cloudflare.
